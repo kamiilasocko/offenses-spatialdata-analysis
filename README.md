@@ -1,2 +1,3 @@
 # offenses-spatialdata-analysis
 Project for subject "Spatial Data Analysis" using R. 
+Main idea was omparison of clustering algorithms such as HDBSCAN, DBSCAN, OPTICS...
