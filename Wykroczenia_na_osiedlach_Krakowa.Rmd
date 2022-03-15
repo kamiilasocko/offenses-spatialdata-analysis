@@ -1,0 +1,149 @@
+PROJEKT 1
+KAMILA SOCKO, nr albumu: 402770
+Zestaw 4
+
+Biblioteki:
+```{r}
+library(sp)
+library("readxl")
+library(sf)
+library(rgdal)
+library(dbscan)
+```
+
+```{r}
+setwd("C:/Users/Home/Desktop/adp/adp")
+```
+
+ZMIANA WSPOLRZEDNYCH MOJEGO ZESTAWU DANYCH PUNKTOWYCH
+```{r}
+
+data <- read_excel("zestaw4.xlsx")
+colnames(data) <- c("Lon", "Lat")#zmiana wspolrzednych
+
+coord <- SpatialPoints(cbind(data$Lon, data$Lat), proj4string = CRS("+proj=longlat"))#utworzenie obiektu spatial points potrzebnego do zmiany wspolrzednych dla moich danych
+coordUTM <- spTransform(coord, CRS("+init=epsg:2178"))
+
+dataUTM <- data.frame(coordUTM)#zmiana na obiekt data.frame
+colnames(dataUTM) <- c("Lon", "Lat")
+dataUTM
+```
+ODCZYT WSPOLRZEDNYCH ZGLOSZONYCH WYKROCZEN
+```{r}
+library(ggplot2)
+ggplot(dataUTM)+geom_point(aes(Lon,Lat))
+```
+
+ZAPIS DO PLIKU
+```{r}
+raster::shapefile(coordUTM, "zestaw4.shp", overwrite=T)
+```
+ODCZYT WSPOLRZEDNYCH ZGLOSZONYCH WYKROCZEN
+```{r}
+myData<-readOGR(dsn = ".", layer = "zestaw4") 
+myData<-data.frame(myData)
+
+library(dplyr)
+myData<-select(myData,-optional,-ID)
+colnames(myData) <- c("Lon", "Lat")
+head(myData)
+```
+
+ODCZYT WSPOLRZEDNYCH OSIEDLI
+```{r}
+osiedla2<-readOGR(dsn = ".", layer = "osiedla") 
+os<-data.frame(osiedla2)
+os
+osiedla2
+library(broom)
+spdf_fortified <- tidy(osiedla2)
+spdf_fortified
+```
+WYKROCZENIA NA OSIEDLACH KRAKOWA PRZEDSTAWIONE NA WYKRESIE
+```{r}
+library(ggplot2)
+ggplot() +
+  geom_polygon(data = spdf_fortified, aes( x = long, y = lat, group = group), fill="#69b3a2", color="white") +
+  theme_void() +geom_point(aes(myData$Lon,myData$Lat))
+```
+KLASTERYZACJA
+
+1. DBSCAN
+```{r}
+
+dimension<-dim(myData)[2]
+minPts=dimension+1#3
+kNNdistplot(myData, k = minPts-1)
+
+db<-dbscan(myData,eps=500,minPts=3, borderPoints=TRUE)
+noise<-myData[db$cluster==0,]#dane okreslone jako szum
+data<-myData[db$cluster!=0,]#dane bez szumu
+clusters<-as.factor(db$cluster)
+level<-clusters[clusters!=0]#wedlug tego grupujemy nie uwzgledniajac danych uznanych jako szum
+ggplot() +
+  geom_polygon(data = spdf_fortified, aes( x = long, y = lat, group = group), fill="thistle1", color="grey") +
+  theme_void() +geom_point(aes(data$Lon,data$Lat, colour = level))+geom_point(aes(noise$Lon,noise$Lat), pch="*", size=5, col="grey")
+#szum rysujemy jako szare gwiazdki
+
+
+db<-dbscan(myData,eps=510,minPts=6, borderPoints=TRUE)
+noise<-myData[db$cluster==0,]
+data<-myData[db$cluster!=0,]
+clusters<-as.factor(db$cluster)
+level<-clusters[clusters!=0]
+ggplot() +
+  geom_polygon(data = spdf_fortified, aes( x = long, y = lat, group = group), fill="thistle1", color="grey") +
+  theme_void() +geom_point(aes(data$Lon,data$Lat, colour = level))+geom_point(aes(noise$Lon,noise$Lat), pch="*", size=5, col="grey")
+
+
+
+db<-dbscan(myData,eps=600,minPts=12, borderPoints=TRUE)
+noise<-myData[db$cluster==0,]
+data<-myData[db$cluster!=0,]
+clusters<-as.factor(db$cluster)
+level<-clusters[clusters!=0]
+ggplot() +
+  geom_polygon(data = spdf_fortified, aes( x = long, y = lat, group = group), fill="thistle1", color="grey") +
+  theme_void() +geom_point(aes(data$Lon,data$Lat, colour = level))+geom_point(aes(noise$Lon,noise$Lat), pch="*", size=5, col="grey")
+
+```
+2. HDBSCAN
+```{r}
+
+db <- hdbscan(myData, minPts =6)
+
+noise<-myData[db$cluster==0,]
+data<-myData[db$cluster!=0,]
+clusters<-as.factor(db$cluster)
+level<-clusters[clusters!=0]
+ggplot() +
+  geom_polygon(data = spdf_fortified, aes( x = long, y = lat, group = group), fill="thistle1", color="grey") +
+  theme_void() +geom_point(aes(data$Lon,data$Lat, colour = level))+geom_point(aes(noise$Lon,noise$Lat), pch="*", size=5, col="grey")
+
+
+
+```
+
+3. OPTICS
+```{r}
+library(fpc)
+opt <- optics(myData, eps = 510,  minPts = 7)
+opt <- extractDBSCAN(opt, eps_cl = 300)
+noise<-myData[opt$cluster==0,]
+data<-myData[opt$cluster!=0,]
+clusters<-as.factor(opt$cluster)
+level<-clusters[clusters!=0]
+ggplot() +
+  geom_polygon(data = spdf_fortified, aes( x = long, y = lat, group = group), fill="thistle1", color="grey") +
+  theme_void() +geom_point(aes(data$Lon,data$Lat, colour = level))+geom_point(aes(noise$Lon,noise$Lat), pch="*", size=5, col="grey")
+
+```
+
+```{r}
+dzielnice<-readOGR(dsn = ".", layer = "dzielnice_Krakowa") 
+dzielnice2<- tm_shape(dzielnice) +
+tm_borders(lw=2, col = "purple")
+dzielnice2+tm_text("nazwa", size="AREA")
+```
+
+
